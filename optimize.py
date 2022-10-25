@@ -50,6 +50,24 @@ def run_optimize_app():
         pickle.dump(production_costs, filehandler)
         filehandler.close()
 
+        filehandler = open(SIMPATH / "shadowprice_dict","wb")
+        pickle.dump(shadowprice_dict, filehandler)
+        filehandler.close()
+
+        filehandler = open(SIMPATH / "slack_dict","wb")
+        pickle.dump(slack_dict, filehandler)
+        filehandler.close()
+
+        filehandler = open(SIMPATH / "optimal_prodsites_dict","wb")
+        pickle.dump(optimal_prodsites_dict, filehandler)
+        filehandler.close()
+
+
+    ###########################################################
+    # Figures
+    ###########################################################
+
+
     # plot production costs distribution
     st.subheader('Production Cost Distribution')
     file = open(SIMPATH / "production_costs",'rb')
@@ -61,11 +79,50 @@ def run_optimize_app():
                         title="Production Costs Distributon")
     st.plotly_chart(fig)
 
-    # show model constraints
-    st.subheader('Show Model Constraints')
+
+    
+    # plot shadow price distribution
+    st.subheader('Show Shadow Price and Slack for each Constraint')
     file = open(SIMPATH / "pulp_model",'rb')
     model = pickle.load(file)
     file.close()
     # select constraint
     constraint_selected = st.selectbox(label='select constraint', options=['_C1', '_C2', '_C3','_C4','_C5','_C6','_C7'])
     st.write(str(model.constraints[constraint_selected]))
+
+    file = open(SIMPATH / "shadowprice_dict",'rb')
+    shadowprice_dict = pickle.load(file)
+    file.close()
+    fig = px.histogram(shadowprice_dict[constraint_selected],  
+                        histnorm = 'probability',
+                        width = 500,
+                        title="Shadow-Price Distributon: "+constraint_selected)
+    st.plotly_chart(fig)
+
+    # plot slack distribution
+    file = open(SIMPATH / "slack_dict",'rb')
+    slack_dict = pickle.load(file)
+    file.close()
+    fig = px.histogram(slack_dict[constraint_selected],  
+             histnorm = 'probability',
+             width = 500,
+             title="Slack Distributon: "+constraint_selected)
+    st.plotly_chart(fig)
+
+
+    # plot optimal production sites distribution
+    st.subheader('Show Optimal Production Site Locations')
+    # select production site
+    _, _, _, _, loc, _ = import_data()
+    productionsite_selected = st.selectbox(label='select production site', options=loc)
+
+    file = open(SIMPATH / "optimal_prodsites_dict",'rb') 
+    optimal_prodsites_dict = pickle.load(file)
+    file.close()
+
+    fig = px.histogram(optimal_prodsites_dict[productionsite_selected],
+                    histnorm = 'probability',
+                    range_x = [-.5,1.5],
+                    width = 500,
+                    title="Production Site Distribution for " + productionsite_selected)
+    st.plotly_chart(fig)
