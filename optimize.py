@@ -1,59 +1,71 @@
 import streamlit as st
-from utils import import_data, run_pulp_model, get_optimal_production_variables, get_shadow_prices_and_slack, get_optimal_production_sites
+from utils import   import_data, \
+                    run_pulp_model, \
+                    run_monte_carlo_sim, \
+                    get_optimal_production_variables, \
+                    get_shadow_prices_and_slack, \
+                    get_optimal_production_sites
 from collections import defaultdict
+from pathlib import Path
+import pickle
 import pulp
 from pulp import *
 import plotly.express as px
 
+
+# make directory to save simulation results
+rootdir = os.getcwd()
+SIMPATH = Path(rootdir) / 'simulation'
+Path(SIMPATH).mkdir(parents=True, exist_ok=True)
+
+
 def run_optimize_app():
-    _, _, _, _, loc, size = import_data()
-    production_costs = [] # save minimal production costs
-    opt_var_dict = defaultdict(list) # save optimal variable values i.e. quantities produced
-    optimal_prodsites_dict = defaultdict(list) # save optimal production site
-    shadowprice_dict= defaultdict(list) # save shadow prices for each constraint
-    slack_dict = defaultdict(list) # save slack for each constraint
+    # select parameters
+    n_experiments = st.slider(label='select number of monte-carlo simulations', min_value=10, max_value=1000, value=10, step=10)
+    fixcost_sd_selected = st.slider(label='select relative fix-cost standard deviation', min_value=0.0, max_value=1.0, value=.05, step=0.05)
+    varcost_sd_selected = st.slider(label='select relative variable-cost standard deviation', min_value=0.0, max_value=1.0, value=.05, step=0.05)
+    fixcost_bias_selected = st.slider(label='select relative fix-cost bias', min_value=0.5, max_value=1.5, value=1.0, step=0.05)
+    varcost_bias_selected = st.slider(label='select relative variable-cost bias', min_value=0.5, max_value=1.5, value=1.0, step=0.05)
+    
+    if st.button('Run Simulation'):
 
-    # loop over Monte-Carlo Simulations
-    for rep in range(20):
-        # run model
-        model, x, y = run_pulp_model(fixcost_bias=0.0, fixcost_sd=0.1, varcost_bias=0.0, varcost_sd=0.1)
-        
-        # get production prices
-        pc = value(model.objective)
-        production_costs.append(pc)
+        # run monte-carlo simulation
+        model, \
+        production_costs, \
+        opt_var_dict, \
+        shadowprice_dict, \
+        slack_dict, \
+        optimal_prodsites_dict = run_monte_carlo_sim(   n_experiments, 
+                                                        fixcost_sd_selected, 
+                                                        varcost_sd_selected, 
+                                                        fixcost_bias_selected, 
+                                                        varcost_bias_selected)
 
-        # get optimal production quantities
-        df_var_opt = get_optimal_production_variables(x, loc)
-        for n in range(len(df_var_opt)):
-            site = df_var_opt.iloc[n,0]
-            q = df_var_opt.iloc[n,1]
-            opt_var_dict[site].append(q)
+        # Save simulation results
+        filehandler = open(SIMPATH / "pulp_model","wb")
+        pickle.dump(model, filehandler)
+        filehandler.close()
 
-        # get shadow prices
-        shadowprices_slack_df = get_shadow_prices_and_slack(model)
-        for n in range(len(shadowprices_slack_df)):
-            constraint = shadowprices_slack_df.iloc[n,0]
-            sp = shadowprices_slack_df.iloc[n,1]
-            shadowprice_dict[constraint].append(sp)
-
-        # get slacks
-        shadowprices_slack_df = get_shadow_prices_and_slack(model)
-        for n in range(len(shadowprices_slack_df)):
-            constraint = shadowprices_slack_df.iloc[n,0]
-            slack = shadowprices_slack_df.iloc[n,2]
-            slack_dict[constraint].append(slack) 
-
-        # get optimal production locations
-        optimal_prodsites_df = get_optimal_production_sites(y, loc, size)
-        for n in range(len(optimal_prodsites_df)):
-            site = optimal_prodsites_df.iloc[n,0]
-            lc = optimal_prodsites_df.iloc[n,1]
-            hc = optimal_prodsites_df.iloc[n,2]
-            optimal_prodsites_dict[site].append(lc or hc) # produce either low or high capacity
+        filehandler = open(SIMPATH / "production_costs","wb")
+        pickle.dump(production_costs, filehandler)
+        filehandler.close()
 
     # plot production costs distribution
+    st.subheader('Production Cost Distribution')
+    file = open(SIMPATH / "production_costs",'rb')
+    production_costs = pickle.load(file)
+    file.close()
     fig = px.histogram(production_costs, 
                         histnorm = 'probability',
                         width = 500,
                         title="Production Costs Distributon")
     st.plotly_chart(fig)
+
+    # show model constraints
+    st.subheader('Show Model Constraints')
+    file = open(SIMPATH / "pulp_model",'rb')
+    model = pickle.load(file)
+    file.close()
+    # select constraint
+    constraint_selected = st.selectbox(label='select constraint', options=['_C1', '_C2', '_C3','_C4','_C5','_C6','_C7'])
+    st.write(str(model.constraints[constraint_selected]))

@@ -3,6 +3,7 @@ import pulp
 from pulp import *
 import random
 import streamlit as st
+from collections import defaultdict
 
 @st.cache
 def import_data()->pd.DataFrame:
@@ -64,6 +65,61 @@ def run_pulp_model(fixcost_bias=0.0, fixcost_sd=0.05, varcost_bias=0.0, varcost_
     #print('Model Status: ', LpStatus[model.status])
 
     return model, x, y # return model and decision variables
+
+
+def run_monte_carlo_sim(n_experiments, fixcost_sd_selected, varcost_sd_selected, fixcost_bias_selected, varcost_bias_selected):
+    """run montecarlo simulation"""
+    _, _, _, _, loc, size = import_data()
+    production_costs = [] # save minimal production costs
+    opt_var_dict = defaultdict(list) # save optimal variable values i.e. quantities produced
+    optimal_prodsites_dict = defaultdict(list) # save optimal production site
+    shadowprice_dict= defaultdict(list) # save shadow prices for each constraint
+    slack_dict = defaultdict(list) # save slack for each constraint
+
+    # loop over Monte-Carlo Simulations
+    for rep in range(n_experiments):
+        # run model
+        model, x, y = run_pulp_model(fixcost_bias=fixcost_bias_selected, 
+                                    fixcost_sd=fixcost_sd_selected, 
+                                    varcost_bias=varcost_bias_selected, 
+                                    varcost_sd=varcost_sd_selected)
+        
+        # get production prices
+        pc = value(model.objective)
+        production_costs.append(pc)
+
+        # get optimal production quantities
+        df_var_opt = get_optimal_production_variables(x, loc)
+        for n in range(len(df_var_opt)):
+            site = df_var_opt.iloc[n,0]
+            q = df_var_opt.iloc[n,1]
+            opt_var_dict[site].append(q)
+
+        # get shadow prices
+        shadowprices_slack_df = get_shadow_prices_and_slack(model)
+        for n in range(len(shadowprices_slack_df)):
+            constraint = shadowprices_slack_df.iloc[n,0]
+            sp = shadowprices_slack_df.iloc[n,1]
+            shadowprice_dict[constraint].append(sp)
+
+        # get slacks
+        shadowprices_slack_df = get_shadow_prices_and_slack(model)
+        for n in range(len(shadowprices_slack_df)):
+            constraint = shadowprices_slack_df.iloc[n,0]
+            slack = shadowprices_slack_df.iloc[n,2]
+            slack_dict[constraint].append(slack) 
+
+        # get optimal production locations
+        optimal_prodsites_df = get_optimal_production_sites(y, loc, size)
+        for n in range(len(optimal_prodsites_df)):
+            site = optimal_prodsites_df.iloc[n,0]
+            lc = optimal_prodsites_df.iloc[n,1]
+            hc = optimal_prodsites_df.iloc[n,2]
+            optimal_prodsites_dict[site].append(lc or hc) # produce either low or high capacity
+    
+    return model, production_costs, opt_var_dict, shadowprice_dict, slack_dict, optimal_prodsites_dict
+
+
 
 def get_shadow_prices_and_slack(model)->pd.DataFrame:
     # get Shadow Price
