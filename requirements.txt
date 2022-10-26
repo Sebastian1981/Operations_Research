@@ -1,0 +1,4 @@
+pandas==1.2.2
+plotly==5.1.0
+PuLP==2.6.0
+streamlit==1.13.0
